@@ -575,6 +575,17 @@ function toast(msg){const el=$("toast");el.textContent=msg;el.style.opacity="1";
 $("copyPrompt").onclick=()=>{copyNow(fullText());toast("Listo. Pégalo en Claude o ChatGPT con Ctrl+V");};
 function openAI(url,name){copyNow(fullText());toast("Copiado. En "+name+" haz clic en el chat y pega con Ctrl+V (⌘V en Mac)");
   setTimeout(()=>window.open(url,"_blank","noopener"),150);}
+  
+  // Recibir automáticamente una URL de video desde Skool
+const incomingUrl = new URLSearchParams(window.location.search).get("url");
+if (incomingUrl) {
+  platform = "skool";
+  $("val").value = incomingUrl;
+  document.querySelectorAll("#plats button").forEach(x => x.classList.remove("on"));
+  document.querySelector('#plats button[data-p="skool"]').classList.add("on");
+  setHint();
+  $("tool").scrollIntoView({behavior:"smooth"});
+
 $("openClaude").onclick=()=>openAI("https://claude.ai/new","Claude");
 $("openGPT").onclick=()=>openAI("https://chatgpt.com/","ChatGPT");
 </script>
