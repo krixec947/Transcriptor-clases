@@ -203,20 +203,20 @@ def run_job(job_id, platform, value, language, cookies_browser):
                 return
                 
             job.update(segments=segs, status="Listo (Groq)", progress=100, done=True)
+   
+    except Exception as e:
+        if is_cancelled(job):
+            return
 
-      except Exception as e:
-           if is_cancelled(job):
-             return
-
-        msg = str(e)
-        low = msg.lower()
-        if "403" in msg or "login" in low or "private" in low:
-            msg += "\n\nPista: activa 'Usar sesión de mi navegador' y ten la sesión iniciada en esa plataforma."
-        if "sign in" in low or "confirm you" in low or "captcha" in low:
-            msg += "\n\nYouTube suele bloquear las descargas desde hostings gratuitos como este."
-        if "drm" in low:
-            msg += "\n\nEste video tiene protección DRM y no se puede transcribir."
-        job.update(status="Error", error=msg, done=True)
+            msg = str(e)
+            low = msg.lower()
+           if "403" in msg or "login" in low or "private" in low:
+                msg += "\n\nPista: activa 'Usar sesión de mi navegador' y ten la sesión iniciada en esa plataforma."
+           if "sign in" in low or "confirm you" in low or "captcha" in low:
+               msg += "\n\nYouTube suele bloquear las descargas desde hostings gratuitos como este."
+           if "drm" in low:
+               msg += "\n\nEste video tiene protección DRM y no se puede transcribir."
+           job.update(status="Error", error=msg, done=True)
 
 
 @app.post("/api/transcribe")
