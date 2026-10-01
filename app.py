@@ -189,7 +189,7 @@ def run_job(job_id, platform, value, language, cookies_browser):
             job.update(status="Comprimiendo audio…", progress=55)
             parts = compress_and_split(audio, tmp)
             segs = []
-           for i, part in enumerate(parts):
+            for i, part in enumerate(parts):
                 if is_cancelled(job):
                     return
 
