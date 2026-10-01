@@ -23,6 +23,8 @@ app = Flask(__name__)
 GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 jobs = {}  # job_id -> {status, progress, segments, error, title, done}
 
+def is_cancelled(job):
+    return job.get("cancelled", False)
 
 # ---------- ID -> URL ----------
 def build_url(platform: str, value: str):
@@ -165,6 +167,9 @@ def run_job(job_id, platform, value, language, cookies_browser):
             )
             return
 
+        if is_cancelled(job):
+            return
+        
         job.update(status="Sin subtítulos. Descargando audio…", progress=35)
         with tempfile.TemporaryDirectory(prefix="skooltx_") as tmp:
             opts = dict(base)
@@ -178,14 +183,25 @@ def run_job(job_id, platform, value, language, cookies_browser):
             if not audio:
                 raise RuntimeError("No se pudo obtener el audio.")
 
+        if is_cancelled(job):
+            return
+            
             job.update(status="Comprimiendo audio…", progress=55)
             parts = compress_and_split(audio, tmp)
             segs = []
-            for i, part in enumerate(parts):
+           for i, part in enumerate(parts):
+                if is_cancelled(job):
+                    return
+
                 label = f" (parte {i + 1} de {len(parts)})" if len(parts) > 1 else ""
+               
                 job.update(status="Transcribiendo con Groq" + label + "…",
                            progress=60 + int(38 * i / len(parts)))
                 segs += groq_transcribe(part, language, offset=i * CHUNK_SECONDS)
+
+            if is_cancelled(job):
+                return
+                
             job.update(segments=segs, status="Listo (Groq)", progress=100, done=True)
 
     except Exception as e:
@@ -224,6 +240,18 @@ def status(job_id):
         return jsonify(error="No existe ese trabajo."), 404
     return jsonify(job)
 
+@app.post("/api/cancel/<job_id>")
+def cancel_job(job_id):
+    job = jobs.get(job_id)
+
+    if not job:
+        return jsonify(error="No existe ese trabajo."), 404
+
+    job["cancelled"] = True
+    job["status"] = "Cancelado"
+    job["done"] = True
+
+    return jsonify(success=True)
 
 @app.get("/")
 def index():
