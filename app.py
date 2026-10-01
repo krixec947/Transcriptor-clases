@@ -154,6 +154,9 @@ def run_job(job_id, platform, value, language, cookies_browser):
             job["title"] = info.get("title") or value
             segs = try_subtitles(ydl, info, language)
 
+        if is_cancelled(job):
+            return
+
         if segs:
             job.update(segments=segs, status="Listo (subtítulos del video)", progress=100, done=True)
             return
@@ -169,7 +172,7 @@ def run_job(job_id, platform, value, language, cookies_browser):
 
         if is_cancelled(job):
             return
-        
+
         job.update(status="Sin subtítulos. Descargando audio…", progress=35)
         with tempfile.TemporaryDirectory(prefix="skooltx_") as tmp:
             opts = dict(base)
@@ -179,44 +182,47 @@ def run_job(job_id, platform, value, language, cookies_browser):
             })
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.extract_info(url, download=True)
+
             audio = next((os.path.join(tmp, f) for f in os.listdir(tmp) if f.startswith("audio")), None)
             if not audio:
                 raise RuntimeError("No se pudo obtener el audio.")
 
-        if is_cancelled(job):
-            return
-            
+            if is_cancelled(job):
+                return
+
             job.update(status="Comprimiendo audio…", progress=55)
             parts = compress_and_split(audio, tmp)
             segs = []
+
             for i, part in enumerate(parts):
                 if is_cancelled(job):
                     return
 
                 label = f" (parte {i + 1} de {len(parts)})" if len(parts) > 1 else ""
-               
-                job.update(status="Transcribiendo con Groq" + label + "…",
-                           progress=60 + int(38 * i / len(parts)))
+                job.update(
+                    status="Transcribiendo con Groq" + label + "…",
+                    progress=60 + int(38 * i / len(parts)),
+                )
                 segs += groq_transcribe(part, language, offset=i * CHUNK_SECONDS)
 
             if is_cancelled(job):
                 return
-                
+
             job.update(segments=segs, status="Listo (Groq)", progress=100, done=True)
-   
+
     except Exception as e:
         if is_cancelled(job):
             return
 
-            msg = str(e)
-            low = msg.lower()
-           if "403" in msg or "login" in low or "private" in low:
-                msg += "\n\nPista: activa 'Usar sesión de mi navegador' y ten la sesión iniciada en esa plataforma."
-           if "sign in" in low or "confirm you" in low or "captcha" in low:
-               msg += "\n\nYouTube suele bloquear las descargas desde hostings gratuitos como este."
-           if "drm" in low:
-               msg += "\n\nEste video tiene protección DRM y no se puede transcribir."
-           job.update(status="Error", error=msg, done=True)
+        msg = str(e)
+        low = msg.lower()
+        if "403" in msg or "login" in low or "private" in low:
+            msg += "\n\nPista: activa 'Usar sesión de mi navegador' y ten la sesión iniciada en esa plataforma."
+        if "sign in" in low or "confirm you" in low or "captcha" in low:
+            msg += "\n\nYouTube suele bloquear las descargas desde hostings gratuitos como este."
+        if "drm" in low:
+            msg += "\n\nEste video tiene protección DRM y no se puede transcribir."
+        job.update(status="Error", error=msg, done=True)
 
 
 @app.post("/api/transcribe")
@@ -226,7 +232,7 @@ def transcribe():
     if not value:
         return jsonify(error="Pega un ID o una URL."), 400
     job_id = uuid.uuid4().hex
-    jobs[job_id] = {"status": "En cola…", "progress": 0, "segments": [], "done": False}
+    jobs[job_id] = {"status": "En cola…", "progress": 0, "segments": [], "done": False, "cancelled": False}
     threading.Thread(
         target=run_job,
         args=(job_id, data.get("platform", "youtube"), value,
@@ -250,6 +256,9 @@ def cancel_job(job_id):
     if not job:
         return jsonify(error="No existe ese trabajo."), 404
 
+    if job.get("done"):
+        return jsonify(success=True)
+
     job["cancelled"] = True
     job["status"] = "Cancelado"
     job["done"] = True
@@ -264,4 +273,6 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+
 
