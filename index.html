@@ -151,6 +151,19 @@
   .job.ok .bar>div{background:var(--ok);box-shadow:0 0 12px var(--ok)}
   .job.err .bar>div{background:var(--err);box-shadow:none}
   .job-err{color:var(--err);font-size:12px;margin-top:8px;white-space:pre-wrap;line-height:1.5}
+  .cancel-btn{
+  margin-top:10px;
+  border:1px solid rgba(255,105,97,.35);
+  background:rgba(255,105,97,.08);
+  color:var(--err);
+  padding:7px 13px;
+  border-radius:999px;
+  font:inherit;
+  font-size:12px;
+  cursor:pointer;
+}
+.cancel-btn:hover{background:rgba(255,105,97,.16)}
+.cancel-btn:disabled{opacity:.45;cursor:default}
   .res-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 18px}
   .res-top h2{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-right:auto}
   #out{scroll-margin-top:64px}
@@ -267,19 +280,65 @@ function pump(){
 function drawJob(j){
   j.el.className="job"+(j.error?" err":j.done?" ok":"");
   j.el.innerHTML=`<div class="job-top"><span class="job-name">${j.n}. ${esc(j.title)}</span><span class="job-st">${esc(j.error?"Error":j.status)}</span></div>
-  <div class="bar"><div style="width:${j.error?100:j.progress}%"></div></div>${j.error?`<div class="job-err">${esc(j.error)}</div>`:""}`;
+  <div class="bar"><div style="width:${j.error?100:j.progress}%"></div></div>
+  ${j.error?`<div class="job-err">${esc(j.error)}</div>`:""}
+  ${j.jobId&&!j.done&&!j.error?`<button class="cancel-btn">Cancelar</button>`:""}`;
+
+  const cancelBtn=j.el.querySelector(".cancel-btn");
+  if(cancelBtn) cancelBtn.onclick=()=>cancelJob(j);
 }
+
+  async function cancelJob(j){
+  if(!j.jobId) return;
+
+  const btn=j.el.querySelector(".cancel-btn");
+  if(btn){
+    btn.disabled=true;
+    btn.textContent="Cancelando…";
+  }
+
+  try{
+    const r=await fetch("/api/cancel/"+j.jobId,{method:"POST"});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||"No se pudo cancelar.");
+
+    j.status="Cancelado";
+    j.done=true;
+    j.cancelled=true;
+    drawJob(j);
+  }catch(e){
+    if(btn){
+      btn.disabled=false;
+      btn.textContent="Cancelar";
+    }
+    toast(e.message);
+  }
+}
+  
 async function run(j){
   try{
     const r=await fetch("/api/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({platform:j.platform,value:j.value,language:j.lang})});
     const d=await r.json(); if(d.error) throw new Error(d.error);
+    j.jobId=d.job_id;
+    drawJob(j);
     while(true){
       await new Promise(r=>setTimeout(r,1200));
       const s=await (await fetch("/api/status/"+d.job_id)).json();
       j.progress=s.progress||0; j.status=s.status||""; if(s.title) j.title=s.title;
       if(s.error){j.error=s.error;break;}
-      if(s.done){j.segs=s.segments||[];j.done=true;j.progress=100;break;}
+     if(s.done){
+      j.done=true;
+      if(s.status==="Cancelado"){
+        j.cancelled=true;
+        j.status="Cancelado";
+        j.progress=s.progress||0;
+    }else{
+        j.segs=s.segments||[];
+        j.progress=100;
+    }
+    break;
+  }
       drawJob(j);
     }
   }catch(e){
