@@ -288,7 +288,7 @@ function drawJob(j){
   if(cancelBtn) cancelBtn.onclick=()=>cancelJob(j);
 }
 
-  async function cancelJob(j){
+async function cancelJob(j){
   if(!j.jobId) return;
 
   const btn=j.el.querySelector(".cancel-btn");
@@ -314,39 +314,54 @@ function drawJob(j){
     toast(e.message);
   }
 }
-  
+
 async function run(j){
   try{
     const r=await fetch("/api/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({platform:j.platform,value:j.value,language:j.lang})});
-    const d=await r.json(); if(d.error) throw new Error(d.error);
+    const d=await r.json();
+    if(d.error) throw new Error(d.error);
+
     j.jobId=d.job_id;
     drawJob(j);
+
     while(true){
       await new Promise(r=>setTimeout(r,1200));
       const s=await (await fetch("/api/status/"+d.job_id)).json();
-      j.progress=s.progress||0; j.status=s.status||""; if(s.title) j.title=s.title;
-      if(s.error){j.error=s.error;break;}
-     if(s.done){
-      j.done=true;
-      if(s.status==="Cancelado"){
-        j.cancelled=true;
-        j.status="Cancelado";
-        j.progress=s.progress||0;
-    }else{
-        j.segs=s.segments||[];
-        j.progress=100;
-    }
-    break;
-  }
+      j.progress=s.progress||0;
+      j.status=s.status||"";
+      if(s.title) j.title=s.title;
+
+      if(s.error){
+        j.error=s.error;
+        break;
+      }
+
+      if(s.done){
+        j.done=true;
+        if(s.status==="Cancelado"){
+          j.cancelled=true;
+          j.status="Cancelado";
+          j.progress=s.progress||0;
+        }else{
+          j.segs=s.segments||[];
+          j.progress=100;
+        }
+        break;
+      }
+
       drawJob(j);
     }
   }catch(e){
-    j.error=(e instanceof TypeError)?"No se pudo conectar con el servidor. Puede estar despertando; espera unos segundos y reintenta.":e.message;
+    j.error=(e instanceof TypeError)
+      ?"No se pudo conectar con el servidor. Puede estar despertando; espera unos segundos y reintenta."
+      :e.message;
   }
+
   drawJob(j);
   if(j.done&&j.segs.length) addResult(j);
 }
+
 function addResult(j){
   $("out").style.display="block";
   const c=document.createElement("div"); c.className="panel rcard"; j.card=c;
